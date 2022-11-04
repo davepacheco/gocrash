@@ -1,0 +1,75 @@
+:showtitle:
+
+= gocrash: run the Go test suite in a loop
+
+`gocrash` is a simple utility for running the Go test suite in a loop until it fails.  `gocrash` uses ZFS to quickkly start each run from a clean slate.  The goal is to make it easy to keep track of the output from every failure.
+
+[source,text]
+----
+Run the Go test suite in a loop until it fails
+
+Usage: gocrash [OPTIONS] <SNAPSHOT>
+
+Arguments:
+  <SNAPSHOT>  ZFS snapshot for dataset containing "goroot"
+
+Options:
+      --concurrency <CONCURRENCY>  how many concurrent threads to run the test suite [default: 2]
+      --stop-after <STOP_AFTER>    stop after each thread does this many runs (leave unspecified to run until failure)
+      --keep-success               save output from successful test runs
+  -h, --help                       Print help information
+----
+
+It works like this:
+
+* You give `gocrash` a ZFS snapshot to a dataset containing "goroot", a clone of the Go source repository.
+* `gocrash` first creates a "working" ZFS dataset to store all the test suite output that it will create.  The dataset is created with a unique name next to the dataset whose snapshot you gave it.
+* For each test run:
+** `gocrash` clones the specified snapshot, creating a new ZFS dataset in which to run the test suite
+** `gocrash` runs the test suite
+** if the test suite passes and you didn't specify `--keep-success`, `gocrash` destroys the clone dataset
+* `gocrash` repeats the process in `--concurrency` threads until either any test run fails or each thread executes `--stop-after` runs (if specified).
+
+== Setup
+
+You set up an environment with something like this:
+
+[source,text]
+----
+~ $ zfs create rpool/home/dap/gotest
+~ $ cd gotest
+gotest $ git clone --recurse-submodules -b go1.19.2 --depth 1 https://go.googlesource.com/go goroot
+----
+
+At this point you can make any local changes you want to the Go clone.  When you're done, create a snapshot:
+
+[source,text]
+----
+$ zfs snapshot rpool/home/dap/gotest@initial
+----
+
+== Run the test suite
+
+Now you can run:
+
+[source,text]
+----
+$ gocrash rpool/home/dap/gotest@initial
+using snapshot:  rpool/home/dap/gotest@initial
+working dataset: rpool/home/dap/gotest/gocrash-1667584742470
+concurrency:     1
+save results:    for failed runs only
+stop:            after any run fails
+
+created zfs dataset "rpool/home/dap/gotest/gocrash-1667584742470"
+2022-11-04 17:59:02.525007707 UTC: thread 0: attempt 0: start
+2022-11-04 18:02:42.879047235 UTC: thread 0: attempt 1: start
+...
+----
+
+This will go on until one of the attempts to run the test suite fails.
+
+
+== Clean up
+
+Every run of `gocrash` leaves around the working dataset that it created.  This dataset will contain child datasets for every _failed_ test run.  (If you specified `--keep-success`, you'll have a dataset for each successful run, too.)  You can safely `zfs destroy -r` the working dataset to remove everything created by `gocrash`.
