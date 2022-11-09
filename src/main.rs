@@ -91,6 +91,7 @@ fn gocrash(args: &Args) -> Result<(), anyhow::Error> {
             ),
         }
     );
+    print_go_env_vars();
     println!("");
 
     // Create our working dataset
@@ -136,6 +137,26 @@ fn gocrash(args: &Args) -> Result<(), anyhow::Error> {
             Err(anyhow!("test failed"))
         }
     })
+}
+
+fn print_go_env_vars() {
+    let mut go_vars = std::env::vars_os()
+        .filter_map(|(key, v)| {
+            key.into_string()
+                .ok()
+                .filter(|s| s.starts_with("GO"))
+                .map(|k| (k, v))
+        })
+        .peekable();
+    if go_vars.peek().is_some() {
+        println!("Environment variables starting with GO:");
+        for (k, v) in go_vars {
+            println!("    {:>20}={}", k, v.to_string_lossy());
+        }
+    } else {
+        println!("Environment variables starting with GO: none");
+    }
+
 }
 
 /// Describes the state of this "gocrash" run
