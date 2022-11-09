@@ -11,6 +11,7 @@
 use anyhow::anyhow;
 use anyhow::Context;
 use clap::Parser;
+use std::fmt::Write;
 use std::os::unix::process::ExitStatusExt;
 use std::process::Command;
 use std::sync::atomic::AtomicBool;
@@ -167,12 +168,6 @@ fn gocrash_worker<'a>(gocrash: &'a Gocrash<'a>, which: u8) -> WorkerResult {
     let mut ntries = 0;
     while !gocrash.stopping.load(Ordering::SeqCst) {
         // Carry out one run of the test suite.
-        println!(
-            "{}: thread {}: attempt {}: start",
-            chrono::Utc::now(),
-            which,
-            ntries
-        );
         if let Err(error) = gocrash_worker_run_one(gocrash, which, ntries) {
             gocrash.stopping.store(true, Ordering::SeqCst);
             return WorkerResult { ntries, result: Err(error) };
@@ -223,20 +218,25 @@ fn gocrash_worker_run_one<'a>(
 
     // Run the Go build and test suite with stdout and stderr redirected to
     // files in the new dataset.
-    let stdout_file = {
-        let stdout_file_path = mountpoint.join("test_run_stdout");
-        std::fs::OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(stdout_file_path)?
-    };
-    let stderr_file = {
-        let stderr_file_path = mountpoint.join("test_run_stderr");
-        std::fs::OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(stderr_file_path)?
-    };
+    let stdout_file_path = mountpoint.join("test_run_stdout");
+    let stderr_file_path = mountpoint.join("test_run_stderr");
+    println!(
+        "{}: thread {}: attempt {}: start (see {})",
+        chrono::Utc::now(),
+        which_thread,
+        which_run,
+        stdout_file_path.display(),
+    );
+
+    let stdout_file = std::fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(stdout_file_path)?;
+
+    let stderr_file = std::fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(stderr_file_path)?;
 
     run_command(
         Command::new("bash")
@@ -291,12 +291,20 @@ fn run_command(cmd: &mut Command) -> Result<String, anyhow::Error> {
             format!("terminated by signal {}", signal)
         };
 
-        Err(anyhow!(
-            "command failed: {}: {}\nstderr:\n{}\n\nstdout:\n{}\n",
-            label,
-            result_summary,
-            String::from_utf8_lossy(&result.stdout),
-            String::from_utf8_lossy(&result.stderr)
-        ))
+        let mut output = String::new();
+        write!(&mut output, "command failed: {}: {}", label, result_summary)
+            .unwrap();
+
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        if stderr.len() > 0 {
+            write!(&mut output, "\nstderr:\n{}\n", stderr).unwrap();
+        }
+
+        let stdout = String::from_utf8_lossy(&result.stdout);
+        if stdout.len() > 0 {
+            write!(&mut output, "\nstdout:\n{}\n", stdout).unwrap();
+        }
+
+        Err(anyhow!("{}", output))
     }
 }
