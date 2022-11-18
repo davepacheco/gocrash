@@ -1,0 +1,5 @@
+#!/usr/bin/bash
+
+# On Linux, pretend "sudo" is "pfexec" because gocrash uses "pfexec" to run
+# stuff.  This is not a great solution.
+exec sudo "$@"

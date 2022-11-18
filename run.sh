@@ -5,9 +5,19 @@
 
 set -o xtrace
 set -o errexit
+set -o noclobber
 
 dir="$(dirname "${BASH_SOURCE[0]}")"
 cd "$dir"
+
+# Use our pid as a unique id.
+id=$$
+
+# Create output directory and temporary directories.
+mkdir -p output
+
+# On Linux, add "$PWD/bin-linux" to PATH.
+# export PATH=$PATH:$PWD/bin-linux
 
 # Turn on extra run-time checks for use of unsafe.Pointer.
 #export GO_GCFLAGS="-d=checkptr"
@@ -23,4 +33,4 @@ export GODEBUG=clobberfree
 # Turn off GC altogether.
 # export GOGC=off
 
-cargo run -- "$@"
+exec nohup cargo run -- "$@" > output/$id 2>&1
